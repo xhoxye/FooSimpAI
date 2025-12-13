@@ -32,10 +32,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: 'npm'
+          # Removed cache: 'npm' because it requires package-lock.json to exist
 
       - name: Install dependencies
-        run: npm ci
+        # Changed from 'npm ci' (strict, needs lockfile) to 'npm install' (generates lockfile on fly)
+        run: npm install
 
       - name: Build
         run: npm run build
