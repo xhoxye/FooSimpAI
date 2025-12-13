@@ -1,0 +1,5 @@
+{
+  "name": "FooSimpAI",
+  "description": "A modern frontend for ComfyUI allowing workflow uploading, parameter mapping, and image generation.",
+  "requestFramePermissions": []
+}
