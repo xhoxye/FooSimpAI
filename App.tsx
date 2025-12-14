@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { AppState, DEFAULT_UI_VALUES, UIFieldType, RecentImage, ComfyWorkflow } from './types';
 import Sidebar from './components/Sidebar';
 import ImageViewer from './components/ImageViewer';
@@ -6,6 +6,7 @@ import Header from './components/Header';
 import SettingsModal from './components/SettingsModal';
 import AboutModal from './components/AboutModal';
 import { prepareWorkflow } from './utils/comfyUtils';
+import { translations, Language } from './utils/i18n';
 
 // Helper to generate a UUID for Client ID
 const uuidv4 = () => {
@@ -30,17 +31,75 @@ const App: React.FC = () => {
     errorMessage: null,
     recentImages: [],
     activeAspectRatio: '9:16', // Default Portrait
-    activeStyle: 'Realistic'
+    activeStyle: 'Realistic',
+    theme: 'dark',
+    language: 'en'
   });
   
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [lastGenerationDuration, setLastGenerationDuration] = useState<number | null>(null);
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const timerRef = useRef<number | null>(null);
+  const startTimeRef = useRef<number>(0);
 
-  // Heartbeat to check backend status
+  // Initialize state from localStorage
   useEffect(() => {
+    const savedHistory = localStorage.getItem('foosimpai_history');
+    const savedTheme = localStorage.getItem('foosimpai_theme') as 'dark' | 'light' | null;
+    const savedLang = localStorage.getItem('foosimpai_lang') as 'en' | 'zh' | null;
+
+    setState(prev => ({
+        ...prev,
+        recentImages: savedHistory ? JSON.parse(savedHistory) : [],
+        theme: savedTheme || 'dark',
+        language: savedLang || 'en'
+    }));
+  }, []);
+
+  // Persist state & Apply Theme
+  useEffect(() => {
+      if (state.recentImages.length > 0) {
+        localStorage.setItem('foosimpai_history', JSON.stringify(state.recentImages));
+      }
+      localStorage.setItem('foosimpai_theme', state.theme);
+      localStorage.setItem('foosimpai_lang', state.language);
+
+      // Apply theme to html element
+      if (state.theme === 'dark') {
+          document.documentElement.classList.add('dark');
+      } else {
+          document.documentElement.classList.remove('dark');
+      }
+  }, [state.recentImages, state.theme, state.language]);
+
+  // Timer Effect
+  useEffect(() => {
+    if (state.generationStatus === 'generating') {
+        startTimeRef.current = Date.now();
+        setElapsedTime(0);
+        timerRef.current = window.setInterval(() => {
+            setElapsedTime(Number(((Date.now() - startTimeRef.current) / 1000).toFixed(1)));
+        }, 100);
+    } else {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+    }
+    return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [state.generationStatus]);
+
+  // Heartbeat to check backend status & WebSocket Connection
+  useEffect(() => {
+    // Clean URL for fetch requests
+    const cleanUrl = state.backendUrl.replace(/\/$/, '');
+
+    // 1. HTTP Heartbeat
     const checkConnection = async () => {
         try {
-            const res = await fetch(`${state.backendUrl}/system_stats`);
+            const res = await fetch(`${cleanUrl}/system_stats`);
             if (res.ok) {
                 setState(prev => ({ ...prev, backendStatus: true }));
             } else {
@@ -53,7 +112,31 @@ const App: React.FC = () => {
 
     checkConnection(); // Initial check
     const interval = setInterval(checkConnection, 5000); // Check every 5s
-    return () => clearInterval(interval);
+
+    // 2. WebSocket Connection (Required for ComfyUI to accept prompt with client_id)
+    let ws: WebSocket | null = null;
+    try {
+        const urlObj = new URL(cleanUrl);
+        const protocol = urlObj.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${urlObj.host}/ws?clientId=${CLIENT_ID}`;
+        
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+             // console.log("ComfyUI WS Connected");
+        };
+        ws.onerror = (err) => {
+             // console.error("ComfyUI WS Error", err);
+        };
+    } catch (e) {
+        console.error("Invalid URL for WebSocket:", e);
+    }
+
+    return () => {
+        clearInterval(interval);
+        if (ws) {
+            ws.close();
+        }
+    };
   }, [state.backendUrl]);
 
   const handleValueChange = (field: UIFieldType, value: any) => {
@@ -107,15 +190,28 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleClearHistory = () => {
+      setState(prev => ({ ...prev, recentImages: [] }));
+      localStorage.removeItem('foosimpai_history');
+  };
+
   const generateImage = useCallback(async () => {
     if (!state.workflow) return;
 
     setState(prev => ({ ...prev, generationStatus: 'generating', errorMessage: null }));
     const startTime = Date.now();
+    const cleanUrl = state.backendUrl.replace(/\/$/, '');
 
     try {
       // 1. Prepare Payload
-      const promptWorkflow = prepareWorkflow(state.workflow, state.mappings, state.uiValues);
+      // If seed is -1, generate a random one for the actual API call
+      // We do NOT update state.uiValues so the UI still shows -1 (Random)
+      const submissionValues = { ...state.uiValues };
+      if (submissionValues[UIFieldType.SEED] === -1) {
+          submissionValues[UIFieldType.SEED] = Math.floor(Math.random() * 10000000000000);
+      }
+
+      const promptWorkflow = prepareWorkflow(state.workflow, state.mappings, submissionValues);
       
       const payload = {
         client_id: CLIENT_ID,
@@ -123,7 +219,7 @@ const App: React.FC = () => {
       };
 
       // 2. Send Prompt Request
-      const response = await fetch(`${state.backendUrl}/prompt`, {
+      const response = await fetch(`${cleanUrl}/prompt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -146,33 +242,44 @@ const App: React.FC = () => {
         await new Promise(r => setTimeout(r, 1000));
         attempts++;
 
-        const historyRes = await fetch(`${state.backendUrl}/history/${promptId}`);
+        const historyRes = await fetch(`${cleanUrl}/history/${promptId}`);
         if (historyRes.ok) {
            const historyData = await historyRes.json();
            if (historyData[promptId] && historyData[promptId].outputs) {
              const outputs = historyData[promptId].outputs;
              for (const nodeId in outputs) {
                if (outputs[nodeId].images && outputs[nodeId].images.length > 0) {
-                 const imgData = outputs[nodeId].images[0];
-                 const imageUrl = `${state.backendUrl}/view?filename=${imgData.filename}&subfolder=${imgData.subfolder}&type=${imgData.type}`;
+                 
+                 // Process ALL images in the batch
+                 const newImages: RecentImage[] = [];
+                 let lastImageUrl = "";
+
+                 // Loop backwards so the last image generated becomes the "main" one visible,
+                 // but preserve order in history
+                 for (let i = 0; i < outputs[nodeId].images.length; i++) {
+                     const imgData = outputs[nodeId].images[i];
+                     const imageUrl = `${cleanUrl}/view?filename=${imgData.filename}&subfolder=${imgData.subfolder}&type=${imgData.type}`;
+                     lastImageUrl = imageUrl;
+                     
+                     newImages.push({
+                         id: `${promptId}_${i}`, // Unique ID for batch items
+                         url: imageUrl,
+                         timestamp: Date.now(),
+                         prompt: state.uiValues[UIFieldType.POSITIVE_PROMPT]
+                     });
+                 }
                  
                  // Calculate duration
                  const endTime = Date.now();
                  const duration = Number(((endTime - startTime) / 1000).toFixed(1));
                  setLastGenerationDuration(duration);
 
-                 const newImage: RecentImage = {
-                     id: promptId,
-                     url: imageUrl,
-                     timestamp: Date.now(),
-                     prompt: state.uiValues[UIFieldType.POSITIVE_PROMPT]
-                 };
-
                  setState(prev => ({
                    ...prev,
                    generationStatus: 'success',
-                   generatedImage: imageUrl,
-                   recentImages: [newImage, ...prev.recentImages].slice(0, 10) // Keep last 10
+                   generatedImage: lastImageUrl,
+                   // Limit history to 15
+                   recentImages: [...newImages.reverse(), ...prev.recentImages].slice(0, 15) 
                  }));
                  isDone = true;
                  break;
@@ -198,7 +305,7 @@ const App: React.FC = () => {
   }, [state.workflow, state.mappings, state.uiValues, state.backendUrl]);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden text-slate-100 bg-[#09090b]">
+    <div className="flex flex-col h-screen w-screen overflow-hidden text-slate-900 bg-slate-100 dark:text-slate-100 dark:bg-neutral-950">
       
       <Header 
         workflowName={state.workflowName}
@@ -206,6 +313,10 @@ const App: React.FC = () => {
         backendStatus={state.backendStatus}
         onOpenSettings={() => setState(s => ({ ...s, isSettingsOpen: true }))}
         onOpenAbout={() => setIsAboutOpen(true)}
+        theme={state.theme}
+        toggleTheme={() => setState(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }))}
+        language={state.language}
+        toggleLanguage={() => setState(s => ({ ...s, language: s.language === 'en' ? 'zh' : 'en' }))}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -220,7 +331,7 @@ const App: React.FC = () => {
             onAspectRatioChange={handleAspectRatioChange}
             activeStyle={state.activeStyle}
             onStyleChange={(style) => setState(s => ({ ...s, activeStyle: style }))}
-            lastGenerationDuration={lastGenerationDuration}
+            lang={state.language}
         />
 
         <ImageViewer 
@@ -230,6 +341,10 @@ const App: React.FC = () => {
             recentImages={state.recentImages}
             onOpenSettings={() => setState(s => ({ ...s, isSettingsOpen: true }))}
             onSelectRecent={(url) => setState(s => ({ ...s, generatedImage: url, generationStatus: 'success' }))}
+            onClearHistory={handleClearHistory}
+            lang={state.language}
+            elapsedTime={elapsedTime}
+            lastDuration={lastGenerationDuration}
         />
       </div>
 
@@ -244,11 +359,13 @@ const App: React.FC = () => {
         setMappings={(m) => setState(s => ({ ...s, mappings: m }))}
         setWorkflowName={(name) => setState(s => ({ ...s, workflowName: name }))}
         onUpdateUiValues={(values) => setState(s => ({ ...s, uiValues: { ...s.uiValues, ...values } }))}
+        lang={state.language}
       />
 
       <AboutModal 
         isOpen={isAboutOpen}
         onClose={() => setIsAboutOpen(false)}
+        lang={state.language}
       />
     </div>
   );

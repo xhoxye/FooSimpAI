@@ -9,6 +9,7 @@ export enum UIFieldType {
   SCHEDULER = 'scheduler',
   WIDTH = 'width',
   HEIGHT = 'height',
+  BATCH_SIZE = 'batch_size', // Added Batch Size
   MODEL = 'ckpt_name'
 }
 
@@ -54,18 +55,21 @@ export interface AppState {
   recentImages: RecentImage[];
   activeAspectRatio: string; // e.g., "9:16"
   activeStyle: string; // e.g., "Realistic"
+  theme: 'dark' | 'light';
+  language: 'en' | 'zh';
 }
 
 export const DEFAULT_UI_VALUES: Record<UIFieldType, any> = {
   [UIFieldType.POSITIVE_PROMPT]: "A futuristic city with flying cars in a cyberpunk style, neon lights, rain reflections, cinematic lighting...",
   [UIFieldType.NEGATIVE_PROMPT]: "blur, low quality, watermark, text, deformed",
-  [UIFieldType.SEED]: 123456789,
+  [UIFieldType.SEED]: -1, 
   [UIFieldType.STEPS]: 25,
   [UIFieldType.CFG]: 7.0,
   [UIFieldType.SAMPLER_NAME]: "euler",
   [UIFieldType.SCHEDULER]: "normal",
   [UIFieldType.WIDTH]: 544,
   [UIFieldType.HEIGHT]: 960,
+  [UIFieldType.BATCH_SIZE]: 1, // Default Batch Size
   [UIFieldType.MODEL]: ""
 };
 
@@ -79,5 +83,6 @@ export const FIELD_LABELS: Record<UIFieldType, string> = {
   [UIFieldType.SCHEDULER]: "Scheduler",
   [UIFieldType.WIDTH]: "Width",
   [UIFieldType.HEIGHT]: "Height",
+  [UIFieldType.BATCH_SIZE]: "Batch Size",
   [UIFieldType.MODEL]: "Checkpoint Model"
 };

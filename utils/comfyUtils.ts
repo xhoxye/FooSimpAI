@@ -57,11 +57,12 @@ export const autoMapWorkflow = (workflow: ComfyWorkflow): UIMappings => {
     }
   }
 
-  // 3. Find Latent Image (Resolution)
+  // 3. Find Latent Image (Resolution & Batch Size)
   for (const [id, node] of Object.entries(workflow)) {
     if (node.class_type === 'EmptyLatentImage') {
       mappings[UIFieldType.WIDTH] = { nodeId: id, field: 'width' };
       mappings[UIFieldType.HEIGHT] = { nodeId: id, field: 'height' };
+      mappings[UIFieldType.BATCH_SIZE] = { nodeId: id, field: 'batch_size' };
       break;
     }
   }
@@ -92,7 +93,7 @@ export const prepareWorkflow = (
       }
 
       // Special handling for numeric fields to ensure type safety
-      if (uiField === UIFieldType.SEED || uiField === UIFieldType.STEPS || uiField === UIFieldType.WIDTH || uiField === UIFieldType.HEIGHT) {
+      if (uiField === UIFieldType.SEED || uiField === UIFieldType.STEPS || uiField === UIFieldType.WIDTH || uiField === UIFieldType.HEIGHT || uiField === UIFieldType.BATCH_SIZE) {
         value = Number(value);
       }
       if (uiField === UIFieldType.CFG) {
@@ -113,6 +114,13 @@ export const extractDefaultValues = (workflow: ComfyWorkflow, mappings: UIMappin
   const values: Partial<Record<UIFieldType, any>> = {};
   for (const [key, mapping] of Object.entries(mappings)) {
     const fieldType = key as UIFieldType;
+    
+    // SKIP logic: Do not overwrite Seed, Width, Height or Batch Size from workflow.
+    // Use the app defaults instead.
+    if (fieldType === UIFieldType.SEED || fieldType === UIFieldType.WIDTH || fieldType === UIFieldType.HEIGHT || fieldType === UIFieldType.BATCH_SIZE) {
+        continue;
+    }
+
     if (mapping && workflow[mapping.nodeId] && workflow[mapping.nodeId].inputs) {
       const rawValue = workflow[mapping.nodeId].inputs[mapping.field];
       if (rawValue !== undefined) {

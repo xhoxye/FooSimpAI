@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { 
   Trash2, Dices, Settings, Loader2, Zap, 
   Square, RectangleHorizontal, RectangleVertical, Monitor,
-  Palette, Camera, PenTool, Box, Layers, Component, X
+  Palette, Camera, PenTool, Box, Layers, Component, Brush
 } from 'lucide-react';
-import { UIFieldType, AppState, FIELD_LABELS } from '../types';
+import { UIFieldType, AppState } from '../types';
 import { getFieldOptions } from '../utils/comfyUtils';
+import { translations, Language } from '../utils/i18n';
 
 interface SidebarProps {
   uiValues: Record<UIFieldType, any>;
@@ -18,7 +19,7 @@ interface SidebarProps {
   onAspectRatioChange: (ratio: string) => void;
   activeStyle: string;
   onStyleChange: (style: string) => void;
-  lastGenerationDuration: number | null;
+  lang: Language;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -32,9 +33,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   onAspectRatioChange,
   activeStyle,
   onStyleChange,
-  lastGenerationDuration
+  lang
 }) => {
   const [activeTab, setActiveTab] = useState<'create' | 'models' | 'advanced'>('create');
+  const t = translations[lang];
 
   const ASPECT_RATIOS = [
     { id: '9:16', label: '9:16', icon: RectangleVertical },
@@ -43,12 +45,24 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: '4:3', label: '4:3', icon: Monitor },
   ];
 
+  // Art Styles with Prompt keywords
   const ART_STYLES = [
-    { id: 'Realistic', label: 'Realistic', icon: Camera },
-    { id: 'Anime', label: 'Anime', icon: Component },
-    { id: '3D Render', label: '3D Render', icon: Box },
-    { id: 'Oil Paint', label: 'Oil Paint', icon: Palette },
-    { id: 'Sketch', label: 'Sketch', icon: PenTool },
+    { id: 'Realistic', label: 'Realistic', icon: Camera, prompt: "photorealistic, cinematic lighting, 8k, detailed texture" },
+    { id: 'Anime', label: 'Anime', icon: Component, prompt: "anime style, vibrant colors, studio ghibli style, cel shaded" },
+    { id: '3D Render', label: '3D Render', icon: Box, prompt: "3d render, blender cycles, clay material, isometric, cute" },
+    { id: 'Oil Paint', label: 'Oil', icon: Palette, prompt: "oil painting, impasto, classical art, heavy brushstrokes" },
+    { id: 'Sketch', label: 'Sketch', icon: PenTool, prompt: "charcoal sketch, rough lines, graphite texture, monochrome" },
+    { id: 'Watercolor', label: 'Watercolor', icon: Brush, prompt: "watercolor painting, wet-on-wet, pastel colors, paper texture" },
+  ];
+
+  // Defined Prompt List for Random
+  const RANDOM_PROMPTS = [
+    "A hyper-realistic portrait of a woman in a rainstorm, cinematic lighting, 8k resolution, detailed skin texture",
+    "Studio Ghibli style, lush green magical forest with glowing spirits, serene atmosphere",
+    "Isometric 3D render of a cozy gamer room, neon lighting, cute props",
+    "A dramatic oil painting of a ship in a stormy sea, heavy brushstrokes, golden age style",
+    "Cyberpunk street food vendor, neon signs, rain reflections, futuristic attire",
+    "A steampunk clockwork owl, brass gears, intricate mechanism, technical drawing"
   ];
 
   const handleClearPrompt = () => {
@@ -60,80 +74,95 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleRandomPrompt = () => {
-    const prompts = [
-      "A futuristic city with flying cars in a cyberpunk style, neon lights",
-      "A serene zen garden with cherry blossoms, 8k resolution, cinematic lighting",
-      "Portrait of a warrior princess, intricate armor, fantasy art style",
-      "A cute robot watering plants in a greenhouse, isometric view, 3d render"
-    ];
-    const random = prompts[Math.floor(Math.random() * prompts.length)];
+    const random = RANDOM_PROMPTS[Math.floor(Math.random() * RANDOM_PROMPTS.length)];
     onValueChange(UIFieldType.POSITIVE_PROMPT, random);
   };
 
+  const handleStyleClick = (styleId: string, promptSuffix: string) => {
+    onStyleChange(styleId);
+    
+    // Append logic
+    const current = uiValues[UIFieldType.POSITIVE_PROMPT] || "";
+    // Avoid double appending if already ends with it (simple check)
+    if (!current.includes(promptSuffix)) {
+        const separator = current.length > 0 && !current.endsWith(',') ? ', ' : '';
+        onValueChange(UIFieldType.POSITIVE_PROMPT, `${current}${separator}${promptSuffix}`);
+    }
+  };
+
   const handleCustomDimension = (field: UIFieldType, val: string) => {
-    // onValueChange will trigger parent state update. 
-    // Parent logic in App.tsx needs to set activeAspectRatio to 'custom' if it doesn't match presets.
-    // For now we just pass value. The highlight logic in sidebar depends on activeAspectRatio prop passed down.
     onValueChange(field, val);
   };
 
+  // Shared button style
+  const actionButtonStyle = "bg-slate-200/50 dark:bg-neutral-800/80 hover:bg-slate-300 dark:hover:bg-neutral-700 text-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded-md flex items-center gap-1 border border-slate-300 dark:border-neutral-700 transition-all";
+
+  // Input styles
+  const inputStyle = "w-full bg-white dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-lg py-2 text-xs text-slate-800 dark:text-white focus:border-blue-500 outline-none transition-colors";
+  const textAreaStyle = "w-full bg-white dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-4 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-neutral-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none transition-all";
+  
+  // Card Container style (used for "Card Rounded Corners" requirement)
+  const cardStyle = "bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-slate-200 dark:border-neutral-800 p-5";
+
   return (
-    <aside className="w-[400px] bg-[#0c0e12] flex flex-col h-full z-20 shadow-2xl overflow-hidden relative">
+    <aside className="w-[450px] flex flex-col h-full z-20 overflow-hidden relative transition-colors duration-200 bg-slate-100 dark:bg-neutral-950 px-4 pb-4">
       
       {/* Tabs */}
-      <div className="flex px-6 gap-6 bg-[#0c0e12] pt-4 shrink-0">
+      <div className="flex px-4 gap-6 pt-2 shrink-0 transition-colors">
         <button 
           onClick={() => setActiveTab('create')}
-          className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'create' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'create' ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-neutral-500 hover:text-slate-600 dark:hover:text-neutral-300'}`}
         >
-          Create
+          {t.create}
           {activeTab === 'create' && <span className="absolute bottom-0 left-0 w-full h-1 bg-blue-600 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.8)]"></span>}
         </button>
         <button 
           onClick={() => setActiveTab('models')}
-          className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'models' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'models' ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-neutral-500 hover:text-slate-600 dark:hover:text-neutral-300'}`}
         >
-          Models
+          {t.models}
           {activeTab === 'models' && <span className="absolute bottom-0 left-0 w-full h-1 bg-blue-600 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.8)]"></span>}
         </button>
         <button 
           onClick={() => setActiveTab('advanced')}
-          className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'advanced' ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`pb-3 text-sm font-bold transition-all relative ${activeTab === 'advanced' ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-neutral-500 hover:text-slate-600 dark:hover:text-neutral-300'}`}
         >
-          Advanced
+          {t.advanced}
           {activeTab === 'advanced' && <span className="absolute bottom-0 left-0 w-full h-1 bg-blue-600 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.8)]"></span>}
         </button>
       </div>
 
-      {/* Main Content Area - Enclosed in a visual "Card" */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 custom-scrollbar bg-[#0c0e12]">
-        <div className="bg-[#13151a] rounded-2xl p-5 min-h-full space-y-6 shadow-inner border border-slate-800/50">
+      {/* Main Content Area (Card) */}
+      <div className={`flex-1 overflow-y-auto custom-scrollbar ${cardStyle} mb-3`}>
+        <div className="space-y-6">
         
         {activeTab === 'create' && (
           <div className="space-y-8 animate-in fade-in slide-in-from-left-4 duration-300">
              {/* Positive Prompt */}
             <div className="space-y-3">
               <div className="flex justify-between items-center">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Positive Prompt</label>
+                <label className="text-xs font-bold text-slate-500 dark:text-neutral-400 uppercase tracking-widest">{t.positivePrompt}</label>
                 <button 
                     onClick={handleClearPrompt}
-                    className="text-xs flex items-center gap-1 text-slate-500 hover:text-red-400 transition-colors"
+                    title={t.clearTooltip}
+                    className={`${actionButtonStyle} hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/50`}
                 >
-                    <Trash2 className="w-3 h-3" /> Clear
+                    <Trash2 className="w-3 h-3" /> {t.clear}
                 </button>
               </div>
               <div className="relative group">
                 <textarea
                   value={uiValues[UIFieldType.POSITIVE_PROMPT]}
                   onChange={(e) => onValueChange(UIFieldType.POSITIVE_PROMPT, e.target.value)}
-                  className="w-full h-40 bg-[#09090b] border border-slate-800 rounded-xl p-4 text-sm text-slate-200 placeholder-slate-600 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none transition-all"
+                  className={textAreaStyle + " h-40"}
                   placeholder="Describe what you want to generate..."
                 />
                 <button 
                     onClick={handleRandomPrompt}
-                    className="absolute bottom-3 right-3 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs px-2 py-1 rounded-md flex items-center gap-1 backdrop-blur-sm border border-slate-700 transition-all"
+                    title={t.randomTooltip}
+                    className={`absolute bottom-3 right-3 ${actionButtonStyle}`}
                 >
-                    <Dices className="w-3 h-3" /> Random
+                    <Dices className="w-3 h-3" /> {t.random}
                 </button>
               </div>
             </div>
@@ -141,17 +170,18 @@ const Sidebar: React.FC<SidebarProps> = ({
             {/* Art Styles */}
             <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Art Style</label>
+                    <label className="text-xs font-bold text-slate-500 dark:text-neutral-400 uppercase tracking-widest">{t.artStyle}</label>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-3 gap-2">
                     {ART_STYLES.map((style) => (
                         <button
                             key={style.id}
-                            onClick={() => onStyleChange(style.id)}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                            onClick={() => handleStyleClick(style.id, style.prompt)}
+                            title={`${t.artStyleTooltip}: ${style.prompt}`}
+                            className={`flex items-center justify-center gap-2 px-2 py-2.5 rounded-xl border text-xs font-medium transition-all ${
                                 activeStyle === style.id 
                                 ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/40' 
-                                : 'bg-[#09090b] border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                                : 'bg-slate-50 dark:bg-neutral-800 border-slate-200 dark:border-neutral-700 text-slate-600 dark:text-neutral-400 hover:border-blue-400 dark:hover:border-blue-500 hover:text-slate-900 dark:hover:text-slate-200'
                             }`}
                         >
                             <style.icon className="w-3.5 h-3.5" />
@@ -164,40 +194,40 @@ const Sidebar: React.FC<SidebarProps> = ({
             {/* Aspect Ratio & Resolution */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Dimensions</label>
+                    <label className="text-xs font-bold text-slate-500 dark:text-neutral-400 uppercase tracking-widest">{t.dimensions}</label>
                 </div>
                 
                 {/* Manual Inputs */}
                 <div className="grid grid-cols-2 gap-3 mb-3">
                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-bold">W</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 dark:text-neutral-500 font-bold">W</span>
                       <input 
                          type="number" 
                          value={uiValues[UIFieldType.WIDTH]}
                          onChange={(e) => handleCustomDimension(UIFieldType.WIDTH, e.target.value)}
-                         className="w-full bg-[#09090b] border border-slate-800 rounded-lg py-2 pl-8 pr-3 text-xs text-white focus:border-blue-500 outline-none"
+                         className={`${inputStyle} pl-8 pr-3`}
                       />
                    </div>
                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-bold">H</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 dark:text-neutral-500 font-bold">H</span>
                       <input 
                          type="number" 
                          value={uiValues[UIFieldType.HEIGHT]}
                          onChange={(e) => handleCustomDimension(UIFieldType.HEIGHT, e.target.value)}
-                         className="w-full bg-[#09090b] border border-slate-800 rounded-lg py-2 pl-8 pr-3 text-xs text-white focus:border-blue-500 outline-none"
+                         className={`${inputStyle} pl-8 pr-3`}
                       />
                    </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2">
                     {ASPECT_RATIOS.map((ratio) => (
                         <button
                             key={ratio.id}
                             onClick={() => onAspectRatioChange(ratio.id)}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium transition-all ${
                                 activeAspectRatio === ratio.id 
                                 ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/40' 
-                                : 'bg-[#09090b] border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                                : 'bg-slate-50 dark:bg-neutral-800 border-slate-200 dark:border-neutral-700 text-slate-600 dark:text-neutral-400 hover:border-blue-400 dark:hover:border-blue-500 hover:text-slate-900 dark:hover:text-slate-200'
                             }`}
                         >
                             <ratio.icon className="w-3.5 h-3.5" />
@@ -212,22 +242,22 @@ const Sidebar: React.FC<SidebarProps> = ({
         {activeTab === 'models' && (
            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
               <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                     <Layers className="w-3 h-3" /> Model Settings
+                  <label className="text-xs font-bold text-slate-500 dark:text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                     <Layers className="w-3 h-3" /> {t.modelSettings}
                   </label>
-                  <div className="bg-[#09090b] border border-slate-800 rounded-xl p-4 space-y-4">
+                  <div className="bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-4 space-y-4">
                      {/* Checkpoint Name (Manual Override) */}
                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Checkpoint (Exact Filename)</label>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">{t.checkpoint}</label>
                         <input 
                               type="text"
                               value={uiValues[UIFieldType.MODEL]}
                               onChange={(e) => onValueChange(UIFieldType.MODEL, e.target.value)}
-                              placeholder="Leave empty to use workflow default"
-                              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 outline-none focus:border-blue-500"
+                              placeholder={t.checkpointPlaceholder}
+                              className={`${inputStyle} px-3`}
                           />
-                          <p className="text-[10px] text-slate-600">
-                              Enter the exact filename (e.g., v1-5-pruned.ckpt). If blank, the model defined in the JSON workflow is used.
+                          <p className="text-[10px] text-slate-500 dark:text-neutral-600">
+                              {t.checkpointHint}
                           </p>
                      </div>
                   </div>
@@ -240,39 +270,41 @@ const Sidebar: React.FC<SidebarProps> = ({
              {/* Negative Prompt */}
              <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Negative Prompt</label>
+                    <label className="text-xs font-bold text-slate-500 dark:text-neutral-400 uppercase tracking-widest">{t.negativePrompt}</label>
                     <button 
                         onClick={handleClearNegativePrompt}
-                        className="text-xs flex items-center gap-1 text-slate-500 hover:text-red-400 transition-colors"
+                        title={t.clearTooltip}
+                        className={`${actionButtonStyle} hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/50`}
                     >
-                        <Trash2 className="w-3 h-3" /> Clear
+                        <Trash2 className="w-3 h-3" /> {t.clear}
                     </button>
                 </div>
                 <textarea 
                       value={uiValues[UIFieldType.NEGATIVE_PROMPT]}
                       onChange={(e) => onValueChange(UIFieldType.NEGATIVE_PROMPT, e.target.value)}
-                      className="w-full h-20 bg-[#09090b] border border-slate-700/50 rounded-lg p-3 text-xs text-slate-300 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
-                      placeholder="What to avoid..."
+                      className={textAreaStyle + " h-20 p-3"}
+                      placeholder={t.negativePlaceholder}
                 />
             </div>
 
             {/* Compact Parameters */}
-            <div className="bg-[#09090b] border border-slate-800 rounded-xl p-4 space-y-4">
+            <div className="bg-slate-50 dark:bg-neutral-950 border border-slate-200 dark:border-neutral-800 rounded-xl p-4 space-y-4">
               
               {/* Row 1: Seed */}
               <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Seed</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">{t.seed}</label>
                   <div className="flex gap-2">
                       <input 
                           type="number"
                           value={uiValues[UIFieldType.SEED]}
                           onChange={(e) => onValueChange(UIFieldType.SEED, e.target.value)}
-                          className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                          className={`${inputStyle} flex-1 px-3`}
+                          placeholder={t.seedRandom}
                       />
                       <button 
-                          onClick={() => onValueChange(UIFieldType.SEED, Math.floor(Math.random() * 1000000000))}
-                          className="p-2 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 text-slate-300"
-                          title="Randomize Seed"
+                          onClick={() => onValueChange(UIFieldType.SEED, -1)}
+                          title={t.seedRandomTooltip}
+                          className="p-2 bg-slate-200 dark:bg-neutral-800 border border-slate-300 dark:border-neutral-700 rounded-lg hover:bg-slate-300 dark:hover:bg-neutral-700 text-slate-600 dark:text-neutral-300"
                       >
                           <Dices className="w-4 h-4" />
                       </button>
@@ -282,21 +314,21 @@ const Sidebar: React.FC<SidebarProps> = ({
               {/* Row 2: Steps & CFG */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">Steps</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">{t.steps}</label>
                     <input 
                         type="number"
                         value={uiValues[UIFieldType.STEPS]}
                         onChange={(e) => onValueChange(UIFieldType.STEPS, e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                        className={`${inputStyle} px-3`}
                     />
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">CFG Scale</label>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">{t.cfgScale}</label>
                     <input 
                         type="number"
                         value={uiValues[UIFieldType.CFG]}
                         onChange={(e) => onValueChange(UIFieldType.CFG, e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                        className={`${inputStyle} px-3`}
                     />
                 </div>
               </div>
@@ -304,11 +336,11 @@ const Sidebar: React.FC<SidebarProps> = ({
               {/* Row 3: Sampler & Scheduler */}
               <div className="grid grid-cols-2 gap-4">
                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Sampler</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">{t.sampler}</label>
                       <select 
                         value={uiValues[UIFieldType.SAMPLER_NAME]}
                         onChange={(e) => onValueChange(UIFieldType.SAMPLER_NAME, e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                        className={`${inputStyle} px-3`}
                       >
                          {getFieldOptions(UIFieldType.SAMPLER_NAME)?.map(opt => (
                            <option key={opt} value={opt}>{opt}</option>
@@ -316,11 +348,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                       </select>
                    </div>
                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase">Scheduler</label>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">{t.scheduler}</label>
                       <select 
                         value={uiValues[UIFieldType.SCHEDULER]}
                         onChange={(e) => onValueChange(UIFieldType.SCHEDULER, e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                        className={`${inputStyle} px-3`}
                       >
                          {getFieldOptions(UIFieldType.SCHEDULER)?.map(opt => (
                            <option key={opt} value={opt}>{opt}</option>
@@ -334,46 +366,52 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Footer / Generate Button */}
-      <div className="p-6 bg-[#0c0e12] shrink-0">
+      {/* Footer / Generate Button (Card) */}
+      <div className={`${cardStyle} h-28 flex flex-col justify-center shrink-0`}>
         {!hasWorkflow ? (
             <button
                 onClick={onOpenSettings}
-                className="w-full py-4 rounded-xl bg-slate-800 text-slate-400 font-bold border border-slate-700 hover:bg-slate-700 hover:text-white transition-all flex items-center justify-center gap-2"
+                className="w-full py-4 rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-600 dark:text-neutral-400 font-bold border border-slate-200 dark:border-neutral-700 hover:bg-slate-200 dark:hover:bg-neutral-700 hover:text-slate-800 dark:hover:text-white transition-all flex items-center justify-center gap-2"
             >
-                <Settings className="w-5 h-5" /> Connect Workflow
+                <Settings className="w-5 h-5" /> {t.connectWorkflow}
             </button>
         ) : (
-            <button
-                onClick={onGenerate}
-                disabled={status === 'generating'}
-                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-blue-500/25 ${
-                    status === 'generating' 
-                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                    : 'bg-blue-600 hover:bg-blue-500 text-white active:scale-[0.98]'
-                }`}
-            >
-                {status === 'generating' ? (
-                    <>
-                        <Loader2 className="w-5 h-5 animate-spin" /> Generating...
-                    </>
-                ) : (
-                    <>
-                        <Zap className="w-5 h-5 fill-current" /> Generate Image
-                    </>
-                )}
-            </button>
+            <div className="flex gap-3 h-14">
+              {/* Batch Size Input */}
+              <div className="w-16 flex-shrink-0" title={t.batchSize}>
+                <input 
+                  type="number"
+                  min="1"
+                  max="32"
+                  value={uiValues[UIFieldType.BATCH_SIZE]}
+                  onChange={(e) => onValueChange(UIFieldType.BATCH_SIZE, e.target.value)}
+                  className="w-full h-full rounded-xl bg-slate-100 dark:bg-neutral-800 text-slate-800 dark:text-slate-200 font-bold text-center border border-slate-200 dark:border-neutral-700 focus:border-blue-500 focus:bg-white dark:focus:bg-neutral-900 outline-none transition-all"
+                />
+              </div>
+
+              {/* Generate Button */}
+              <button
+                  onClick={onGenerate}
+                  disabled={status === 'generating'}
+                  title={t.generate}
+                  className={`flex-1 h-14 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg hover:shadow-blue-500/25 ${
+                      status === 'generating' 
+                      ? 'bg-slate-100 dark:bg-neutral-800 text-slate-500 cursor-not-allowed border border-slate-200 dark:border-neutral-700' 
+                      : 'bg-blue-600 hover:bg-blue-500 text-white active:scale-[0.98]'
+                  }`}
+              >
+                  {status === 'generating' ? (
+                      <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                      </>
+                  ) : (
+                      <>
+                          <Zap className="w-5 h-5 fill-current" /> {t.generate}
+                      </>
+                  )}
+              </button>
+            </div>
         )}
-        <div className="text-center mt-3">
-             <p className="text-[10px] text-yellow-500/80 font-medium flex items-center justify-center gap-1">
-                <Zap className="w-3 h-3" /> 
-                {status === 'generating' ? 'Calculating...' : (
-                    lastGenerationDuration 
-                    ? `Last generation: ${lastGenerationDuration}s` 
-                    : 'Estimated time: ~4.5s'
-                )}
-             </p>
-        </div>
       </div>
 
     </aside>
